@@ -38,31 +38,46 @@ def _require_env(key: str) -> str:
     return value
 
 
-def build_bot() -> LeadResponseBot:
-    """Read env vars and construct a fully configured LeadResponseBot."""
-    demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() in ("1", "true", "yes")
+def _is_demo_mode() -> bool:
+    return os.getenv("DEMO_MODE", "false").strip().lower() in ("1", "true", "yes")
 
+
+def _build_demo_bot() -> LeadResponseBot:
+    """Minimal bot for demo mode — only needs the Anthropic key."""
+    return LeadResponseBot(
+        sheets_client=None,
+        anthropic_api_key=_require_env("ANTHROPIC_API_KEY"),
+        claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
+        smtp_user="",
+        smtp_password="",
+        sender_name=os.getenv("SENDER_NAME", "Mollie Taylor"),
+        email_subject_template=os.getenv(
+            "EMAIL_SUBJECT_TEMPLATE", "Re: Your enquiry, {name}"
+        ),
+        sign_off=os.getenv("EMAIL_SIGN_OFF", "Best,\nMollie"),
+        demo_mode=True,
+    )
+
+
+def _build_live_bot() -> LeadResponseBot:
+    """Full bot for live mode — requires Google Sheets and Gmail credentials."""
     sheets_client = SheetsClient(
         credentials_path=_require_env("GOOGLE_CREDENTIALS_PATH"),
         spreadsheet_id=_require_env("GOOGLE_SPREADSHEET_ID"),
         sheet_name=os.getenv("GOOGLE_SHEET_NAME", "Sheet1"),
     )
-
     return LeadResponseBot(
         sheets_client=sheets_client,
         anthropic_api_key=_require_env("ANTHROPIC_API_KEY"),
         claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
-        smtp_user=_require_env("GMAIL_ADDRESS") if not demo_mode else "",
-        smtp_password=_require_env("GMAIL_APP_PASSWORD") if not demo_mode else "",
+        smtp_user=_require_env("GMAIL_ADDRESS"),
+        smtp_password=_require_env("GMAIL_APP_PASSWORD"),
         sender_name=os.getenv("SENDER_NAME", "Mollie Taylor"),
         email_subject_template=os.getenv(
             "EMAIL_SUBJECT_TEMPLATE", "Re: Your enquiry, {name}"
         ),
-        sign_off=os.getenv(
-            "EMAIL_SIGN_OFF",
-            "Best,\nMollie",
-        ),
-        demo_mode=demo_mode,
+        sign_off=os.getenv("EMAIL_SIGN_OFF", "Best,\nMollie"),
+        demo_mode=False,
     )
 
 
@@ -80,10 +95,15 @@ def main() -> None:
     poll_minutes = int(os.getenv("POLL_INTERVAL_MINUTES", "5"))
     poll_seconds = poll_minutes * 60
 
-    logger.info("Starting AI Lead Response Bot (demo_mode=%s)", os.getenv("DEMO_MODE", "false"))
+    demo_mode = _is_demo_mode()
+    logger.info("Starting AI Lead Response Bot (demo_mode=%s)", demo_mode)
 
-    bot = build_bot()
+    if demo_mode:
+        bot = _build_demo_bot()
+        bot.process_demo_lead()
+        return
 
+    bot = _build_live_bot()
     if args.loop:
         logger.info("Loop mode — checking every %d minute(s). Press Ctrl+C to stop.", poll_minutes)
         while True:

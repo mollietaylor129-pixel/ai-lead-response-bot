@@ -11,6 +11,13 @@ from mailer import send_email
 from prompts import SYSTEM_PROMPT, build_user_prompt
 from sheets import SheetsClient
 
+_DEMO_LEAD = {
+    "name":     "Sarah Jones",
+    "email":    "sarah@example.com",
+    "business": "Sarah's Yoga Studio",
+    "message":  "Hi, I saw your website and I'm interested in your services — can you tell me more about pricing?",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +32,7 @@ class LeadResponseBot:
     def __init__(
         self,
         *,
-        sheets_client: SheetsClient,
+        sheets_client: SheetsClient | None,
         anthropic_api_key: str,
         claude_model: str,
         smtp_user: str,
@@ -48,6 +55,15 @@ class LeadResponseBot:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def process_demo_lead(self) -> None:
+        """Generate and print a reply for the hardcoded demo lead. No Sheets needed."""
+        lead = _DEMO_LEAD
+        name, business, message = lead["name"], lead["business"], lead["message"]
+        body_core = self._generate_reply(name=name, business=business, message=message)
+        body_text = self._assemble_body(name=name, core=body_core)
+        subject = self._subject_template.format(name=name, business=business)
+        self._print_demo(to=lead["email"], subject=subject, body=body_text)
 
     def process_leads(self) -> int:
         """
@@ -109,8 +125,8 @@ class LeadResponseBot:
                 body_text=body_text,
             )
 
-        # Always mark responded, even in demo mode, so re-runs don't re-process
-        self._sheets.mark_responded(row_index)
+        if self._sheets:
+            self._sheets.mark_responded(row_index)
 
     def _generate_reply(self, *, name: str, business: str, message: str) -> str:
         """Call Claude and return the generated reply body (core sentences only)."""
