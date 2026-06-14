@@ -15,7 +15,7 @@ from google.oauth2.service_account import Credentials
 
 logger = logging.getLogger(__name__)
 
-# The scopes needed to read and write Google Sheets
+# Spreadsheets scope for full read/write; drive.readonly lets gspread open by key
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -51,7 +51,8 @@ class SheetsClient:
             creds = Credentials.from_service_account_file(
                 self._credentials_path, scopes=_SCOPES
             )
-            client = gspread.authorize(creds)
+            # gspread.authorize() is deprecated since v6 — use Client directly
+            client = gspread.Client(auth=creds)
             spreadsheet = client.open_by_key(self._spreadsheet_id)
             self._worksheet = spreadsheet.worksheet(self._sheet_name)
             logger.info("Connected to Google Sheet '%s'", self._sheet_name)
